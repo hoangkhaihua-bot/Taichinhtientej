@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-
+st.image("IMG_20260927_092457.jpg")
 # Thiết lập cấu hình trang
 st.set_page_config(
     page_title="Tính Lãi Gửi Tiết Kiệm",
