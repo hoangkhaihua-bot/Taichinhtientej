@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-st.image("IMG_20260927_092457.jpg")
+import math
+
 # Thiết lập cấu hình trang
 st.set_page_config(
     page_title="Tính Lãi Gửi Tiết Kiệm",
@@ -41,11 +42,30 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Hiển thị hình ảnh
+col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+with col_img2:
+    try:
+        st.image("IMG_20260927_092457.jpg", width=160)
+    except Exception:
+        pass
+
 # Header
 st.markdown('<h1 class="main-header">💰 Tính Lãi Gửi Tiết Kiệm</h1>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">Tài chính thông minh - Tích lũy tương lai ✨</p>', unsafe_allow_html=True)
 
 st.divider()
+
+# Bảng lãi suất tham chiếu tương ứng với kỳ hạn (theo %/năm)
+DEFAULT_RATES = {
+    1: 3.0,
+    3: 3.8,
+    6: 4.7,
+    12: 5.5,
+    18: 5.7,
+    24: 6.0,
+    36: 6.2
+}
 
 # Cột nhập liệu
 col_input1, col_input2 = st.columns(2)
@@ -59,22 +79,28 @@ with col_input1:
         format="%d"
     )
     
-    term_months = st.number_input(
-        "⏳ Kỳ hạn gửi (tháng):",
-        min_value=1,
-        max_value=60,
-        value=12,
-        step=1
+    # Cho phép chọn kỳ hạn phổ biến hoặc nhập số tháng
+    term_option = st.selectbox(
+        "⏳ Chọn kỳ hạn gửi:",
+        options=[1, 3, 6, 12, 18, 24, 36, "Khác (Nhập tùy chỉnh)"]
     )
+    
+    if term_option == "Khác (Nhập tùy chỉnh)":
+        term_months = st.number_input("Nhập số tháng gửi:", min_value=1, max_value=120, value=12, step=1)
+        suggested_rate = 5.5
+    else:
+        term_months = int(term_option)
+        suggested_rate = DEFAULT_RATES.get(term_months, 5.5)
 
 with col_input2:
     interest_rate = st.number_input(
         "📈 Lãi suất (%/năm):",
         min_value=0.1,
         max_value=30.0,
-        value=6.0,
+        value=suggested_rate,
         step=0.1,
-        format="%.2f"
+        format="%.2f",
+        help="Lãi suất tự động thay đổi theo kỳ hạn đã chọn (bạn có thể tự sửa lại số này)."
     )
     
     interest_type = st.selectbox(
@@ -82,38 +108,55 @@ with col_input2:
         options=["Cuối kỳ", "Hàng tháng", "Hàng quý"]
     )
 
+# Tùy chọn Bật/Tắt Lãi Kép
+is_compound = st.checkbox(
+    "🔥 Tái nhập gốc tiền lãi khi hết kỳ (Tính theo Lãi Kép)",
+    value=False,
+    help="Tiền lãi mỗi kỳ sẽ được cộng gộp vào tiền gốc để tính lãi cho kỳ tiếp theo."
+)
+
 # Hàm tính toán
-def calculate_interest(p, r_annual, months, itype):
+def calculate_interest(p, r_annual, months, itype, compound):
     r = r_annual / 100
+    t_years = months / 12.0
     
-    if itype == "Cuối kỳ":
-        # Lãi cuối kỳ = Số tiền gửi * Lãi suất/12 * Số tháng gửi
-        total_interest = p * (r / 12) * months
-        periodic_interest = total_interest  # Nhận 1 lần duy nhất lúc đáo hạn
-        num_periods = 1
-        period_name = "Cuối kỳ"
-        
-    elif itype == "Hàng tháng":
-        # Lãi hàng tháng = Số tiền gửi * (Lãi suất/12)
-        periodic_interest = p * (r / 12)
-        total_interest = periodic_interest * months
+    if itype == "Hàng tháng":
+        n = 12
         num_periods = months
         period_name = "tháng"
-        
     elif itype == "Hàng quý":
-        # Lãi hàng quý = Số tiền gửi * (Lãi suất/4)
-        periodic_interest = p * (r / 4)
-        num_quarters = months / 3
-        total_interest = periodic_interest * num_quarters
-        num_periods = int(num_quarters)
+        n = 4
+        num_periods = int(months / 3) if months >= 3 else 1
         period_name = "quý"
-        
-    total_amount = p + total_interest
+    else:  # Cuối kỳ
+        n = 12 / months if months > 0 else 1
+        num_periods = 1
+        period_name = "Cuối kỳ"
+
+    # Tính theo Lãi Kép
+    if compound and itype != "Cuối kỳ":
+        total_amount = p * math.pow(1 + (r / n), n * t_years)
+        total_interest = total_amount - p
+        periodic_interest = total_interest / num_periods if num_periods > 0 else total_interest
+    # Tính theo Lãi Đơn
+    else:
+        if itype == "Cuối kỳ":
+            total_interest = p * (r / 12) * months
+            periodic_interest = total_interest
+        elif itype == "Hàng tháng":
+            periodic_interest = p * (r / 12)
+            total_interest = periodic_interest * months
+        elif itype == "Hàng quý":
+            periodic_interest = p * (r / 4)
+            total_interest = periodic_interest * (months / 3)
+
+        total_amount = p + total_interest
+
     return periodic_interest, total_interest, total_amount, num_periods, period_name
 
 # Xử lý tính toán
 periodic_interest, total_interest, total_amount, num_periods, period_name = calculate_interest(
-    amount, interest_rate, term_months, interest_type
+    amount, interest_rate, term_months, interest_type, is_compound
 )
 
 st.markdown("### 📊 Kết Quả Tính Toán")
@@ -129,7 +172,7 @@ with col1:
         )
     else:
         st.metric(
-            label=f"Tiền lãi định kỳ (mỗi {period_name})",
+            label=f"Lãi trung bình (mỗi {period_name})",
             value=f"{periodic_interest:,.0f} đ".replace(",", "."),
             help=f"Bạn nhận tổng cộng {num_periods} lần trong kỳ hạn"
         )
@@ -137,12 +180,13 @@ with col1:
 with col2:
     st.metric(
         label="Tổng tiền lãi nhận được",
-        value=f"{total_interest:,.0f} đ".replace(",", ".")
+        value=f"{total_interest:,.0f} đ".replace(",", "."),
+        delta=f"+{((total_interest/amount)*100):.1f}% so với gốc"
     )
 
 with col3:
     st.metric(
-        label="Tổng gốc + lãi nhận được",
+        label="Tổng thực nhận (Gốc + Lãi)",
         value=f"{total_amount:,.0f} đ".replace(",", ".")
     )
 
@@ -156,6 +200,7 @@ summary_data = {
         "Kỳ hạn gửi",
         "Lãi suất áp dụng",
         "Hình thức nhận lãi",
+        "Chế độ tính lãi",
         "Số lần nhận lãi",
         "Tiền lãi mỗi kỳ",
         "Tổng tiền lãi thu về",
@@ -166,6 +211,7 @@ summary_data = {
         f"{term_months} tháng",
         f"{interest_rate}% / năm",
         interest_type,
+        "🔥 Lãi Kép (Tái nhập gốc)" if (is_compound and interest_type != "Cuối kỳ") else "Lãi Đơn (Rút lãi định kỳ)",
         f"{num_periods} lần" if interest_type != "Cuối kỳ" else "1 lần khi đáo hạn",
         f"{periodic_interest:,.0f} VNĐ".replace(",", ".") if interest_type != "Cuối kỳ" else "Nhận cuối kỳ",
         f"{total_interest:,.0f} VNĐ".replace(",", "."),
@@ -177,4 +223,3 @@ df_summary = pd.DataFrame(summary_data)
 st.table(df_summary)
 
 st.success("🎉 Chúc bạn quản lý tài chính hiệu quả và tích lũy được nhiều tài sản!")
-      
